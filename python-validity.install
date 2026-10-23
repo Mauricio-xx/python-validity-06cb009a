@@ -1,0 +1,35 @@
+post_install() {
+    # fprintd-clients still ships fprintd.service. That unit claims the same
+    # bus name as open-fprintd and starts /usr/lib/fprintd, which this stack
+    # does not install. Mask it when the binary is gone.
+    if [[ -f /usr/lib/systemd/system/fprintd.service && ! -x /usr/lib/fprintd ]]; then
+        systemctl mask fprintd.service
+    fi
+
+    install -d /etc/systemd/system/open-fprintd.service.d
+    cat > /etc/systemd/system/open-fprintd.service.d/10-no-debug.conf << 'EOF'
+[Service]
+ExecStart=
+ExecStart=/usr/lib/open-fprintd/open-fprintd
+EOF
+
+    systemctl daemon-reload
+    echo "Enabling services..."
+    systemctl enable --now open-fprintd python3-validity python3-validity-suspend-hotfix
+    echo "Reloading udev rules..."
+    udevadm control --reload-rules
+    udevadm trigger
+}
+
+post_upgrade() {
+    systemctl daemon-reload
+    systemctl try-restart python3-validity.service || true
+}
+
+pre_remove() {
+    echo "Disabling services..."
+    systemctl disable --now python3-validity python3-validity-suspend-hotfix || true
+    rm -f /etc/systemd/system/open-fprintd.service.d/10-no-debug.conf
+    rmdir /etc/systemd/system/open-fprintd.service.d 2>/dev/null || true
+    systemctl daemon-reload || true
+}
